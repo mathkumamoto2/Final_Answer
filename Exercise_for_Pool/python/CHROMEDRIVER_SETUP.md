@@ -11,18 +11,19 @@
 - `Exercise_for_Pool/python/` で `requirements.txt` に記載した依存ライブラリを導入済みであること
 - **過去にセキュリティソフトに検出された実行ファイルは、復元・コピー・除外登録・許可リスト追加をしないこと**
 
-## 1. 公式のChromeDriverを取得
+## 1. 同梱ChromeDriverを確認（初回ダウンロード不要）
 
-PowerShellで、**リポジトリ直下**から実行します。
+`git clone` で取得したリポジトリには、Windows 64bit用 `chromedriver.exe` を**すでに同梱しています**。PC側のChromeとの互換性があるなら、`DOWNLOAD_CHROMEDRIVER.ps1` を実行する必要はありません。まず [Python課題README](README.md) の「1. 準備」を行ってください。
 
-```powershell
-Set-Location .\Exercise_for_Pool\python
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\DOWNLOAD_CHROMEDRIVER.ps1
-```
+2026-11-18に確認した組み合わせ：
 
-このスクリプトはインストール済みのChromeのバージョンを取得し、Chrome for Testingの公式JSON APIで `MAJOR.MINOR.BUILD` が一致するChromeDriverを検索して、公式 `storage.googleapis.com` からダウンロードします。PCに対応する配布版が見つからなければ **勝手に近い版を選ばず停止**します。
+- Chrome：`157.0.8103.51`
+- 同梱ChromeDriver：`157.0.8103.78`（同一 `157.0.8103` ビルド系列）
+- `verify_local_driver.py` で `about:blank` の起動確認成功
 
-成功後は次が作成されます。
+インストール済みChromeのバージョンは `chrome://version` などで確認できます。**Chromeが更新されて互換性がなくなった場合のみ**、後述の「6. ドライバー更新」を実施してください。
+
+同梱ファイルは次のとおりです。
 
 ```text
 ex1_web-scraping/
@@ -69,5 +70,28 @@ ex1_web-scraping/
 ## 5. 提出するファイル
 
 `1-2.py`、`1-2.csv` に加え、使用した **`chromedriver.exe`** を同じ `ex1_web-scraping` ディレクトリへ含めます。再現性とファイル検査のため `chromedriver.sha256`、`chromedriver.source.json`、この説明書、依存ライブラリ一覧も合わせてコミットします。
+
+## 6. ドライバー更新（Chromeのバージョンが変わった場合のみ）
+
+通常は更新不要です。Chromeと同梱ドライバーの互換性がなくなった場合に限り、**過去にウイルス対策ソフトが検出した実行ファイルを再利用せず**、新たにGoogle公式Chrome for Testingから取得してください。
+
+`DOWNLOAD_CHROMEDRIVER.ps1` は、同名の実行ファイルが存在する場合に**勝手に上書きせず停止**します。ドライバー更新時には、現在のバイナリを事前に安全な場所へ退避し、次のコマンドを `Exercise_for_Pool/python` で実行します。
+
+```powershell
+# リポジトリの Exercise_for_Pool/python で実行
+$oldDriver = '.\ex1_web-scraping\chromedriver.exe'
+if (Test-Path $oldDriver) {
+    $backup = Join-Path $HOME 'Downloads\chromedriver_previous_backup'
+    New-Item -ItemType Directory -Path $backup -Force | Out-Null
+    Move-Item -LiteralPath $oldDriver -Destination (Join-Path $backup ('chromedriver_' + (Get-Date -Format 'yyyyMMdd_HHmmss') + '.exe'))
+}
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\DOWNLOAD_CHROMEDRIVER.ps1
+if ($LASTEXITCODE -ne 0) { throw 'ChromeDriverの更新に失敗しました' }
+
+.\.venv\Scripts\python.exe .\verify_local_driver.py
+if ($LASTEXITCODE -ne 0) { throw 'ChromeDriverの起動確認に失敗しました' }
+```
+
+更新スクリプトは、Chromeの `MAJOR.MINOR.BUILD` が一致するChromeDriverを公式カタログから選び、公式 `storage.googleapis.com` からダウンロードします。更新時に `chromedriver.sha256` と `chromedriver.source.json` も再生成されるため、**通常は `1-2.py` を編集する必要はありません**。更新した3ファイルは、利用許可とセキュリティ検査結果を確認してからGitへ登録してください。
 
 **注意：** この文書は元課題の「chromedriverを同梱する」形式に合わせたものです。使用するPCのChromeとDriverの一致を保つ必要があるため、環境に依存しない完全な再実行を保証するものではありません。

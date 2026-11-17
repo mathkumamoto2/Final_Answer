@@ -32,7 +32,7 @@
 - 1-1・1-2は50行・指定9列・店舗名重複なし。2-2は `COUNT(*)` と `COUNT(URL)` を区別し、9列の保存値を照合する。
 - 第三者が再実行できるよう、環境構築・依存ライブラリ・コマンド・検証方法をREADMEに明記する。
 
-## 2026-11-17に確認した結果
+## 2026-11-17〜18に確認した結果
 
 **以下は提出者環境の実行ログ、提出CSV、およびDB確認画像に基づく結果であり、すべての実サイトやPCでの実行成功を保証するものではない。**
 
@@ -42,9 +42,9 @@
 | 1-2（Selenium） | 50件 / 9列 / URL 49件、次ページ遷移を確認 |
 | 2-1 | Ubuntu 20.04 / Python 3.8 / MySQL環境は採点済み・合格 |
 | 2-2 | DB保存50件、URL49件、9列照合成功 |
-| オフラインテスト | Windows 80件合格、Ubuntu/Python 3.8 80件合格 |
+| オフラインテスト | Windows 82件合格、Ubuntu/Python 3.8 82件合格（2026-11-18） |
 | 指定された実サイト例 | `https://r.gnavi.co.jp/n814504/` から `http://lignosa.com/` と `info@lignosa.com` を抽出してPASS |
 
 LIGNOSAの実サイト検証は**掲載されたURLとメールの抽出**に対するもの。接続先ドメイン自体のTLS成功を示すものではない。HTTPエラー、TLSエラー、robots.txt、CAPTCHAなどはモックを用いた回帰テストでも確認している。
 
-**注記：** 元の課題1-2はChromeDriver同梱を要求しているが、現在の修正版は安全上の理由でSelenium Manager方式を採用している。形式面については採点者の確認が必要。
+**注記：** 課題1-2ではGoogle Chrome for Testingから取得した `chromedriver.exe` を `1-2.py` と同じフォルダに同梱した。Selenium Managerによる自動取得は使用しない。ChromeとDriverの互換性を確認し、SHA-256を照合して起動する。手順は [CHROMEDRIVER_SETUP.md](CHROMEDRIVER_SETUP.md) を参照。2026-11-18にWindowsで同梱ドライバーによるChrome起動が成功した。

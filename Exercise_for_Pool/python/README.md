@@ -2,7 +2,6 @@
 
 > **ChromeDriver提出について**：課題1-2は、Google Chrome for Testing の公式配布元から取得した `chromedriver.exe` を `ex1_web-scraping/` に同梱し、`Service(executable_path=...)` で起動する方式です。取得・バージョン照合・SHA-256・提出手順は [CHROMEDRIVER_SETUP.md](CHROMEDRIVER_SETUP.md) を参照してください。古い検出済みの実行ファイルは再利用せず、ウイルス対策ソフトの警告を回避しないでください。
 
-
 このディレクトリは、ぐるなびの店舗情報を取得するPython課題の提出物です。**初めて実行する場合は「1. 準備」から順番に進めてください。** 既存のCSVとDB確認画像を見るだけなら、再スクレイピングは不要です。
 
 - **1-1**：Requestsで店舗50件を取得し、`ex1_web-scraping/1-1.csv` の9列に保存
@@ -14,13 +13,13 @@
 
 ## 0. 提出物と検証済みの結果
 
-| 提出対象 | ファイル・結果 | 2026-11-17の確認 |
+| 提出対象 | ファイル・結果 | 2026-11-17〜18の確認 |
 | --- | --- | --- |
 | 1-1（Requests） | [`1-1.py`](ex1_web-scraping/1-1.py)・[`1-1.csv`](ex1_web-scraping/1-1.csv) | 50件 / 指定9列 / URL 49件 |
-| 1-2（Selenium） | [`1-2.py`](ex1_web-scraping/1-2.py)・[`1-2.csv`](ex1_web-scraping/1-2.csv) | 50件 / 指定9列 / URL 49件 |
+| 1-2（Selenium） | [`1-2.py`](ex1_web-scraping/1-2.py)・[`1-2.csv`](ex1_web-scraping/1-2.csv)・[`chromedriver.exe`](ex1_web-scraping/chromedriver.exe) | 50件 / 指定9列 / URL 49件 |
 | 2-1（Docker環境） | [`ex2-1.png`](ex2_docker_and_db/ex2-1.png) | 採点済み・合格（変更なし） |
 | 2-2（MySQL） | [`2-2.py`](ex2_docker_and_db/2-2.py)・[DB件数](ex2_docker_and_db/ex2-2_count.png)・[列構成](ex2_docker_and_db/ex2-2_columns.png)・[保存内容](ex2_docker_and_db/ex2-2_table.png) | `COUNT(*)=50` / `COUNT(URL)=49` / 9列一致 |
-| 共通処理・テスト | [`shared/`](shared/)・[`tests/`](tests/) | Windows / Ubuntu 3.8でそれぞれ80テスト合格 |
+| 共通処理・テスト | [`shared/`](shared/)・[`tests/`](tests/) | Windows / Ubuntu Python 3.8でそれぞれ82テスト合格 |
 
 上表は**提出者の実行ログと登録済み成果物で確認した結果**です。再実行の成功や、すべての外部サイトの稼働を保証するものではありません。URL未取得の店舗1件は、取得できた証拠のないURLを推測で補完していません。URLとSSLの判定方法は後述します。
 
@@ -30,14 +29,14 @@
 
 ### 1-1. リポジトリを取得
 
-作業したいフォルダでPowerShellを開き、以下を実行します。**修正済みの作業ブランチを指定してクローン**します。
+作業したいフォルダでPowerShellを開き、以下を実行します。**修正内容を取り込んだ `main` ブランチ**を取得します。
 
 ```powershell
-git clone --branch fix/python-scraping-review-20261116 --single-branch https://github.com/mathkumamoto2/Final_Answer.git
+git clone https://github.com/mathkumamoto2/Final_Answer.git
 Set-Location .\Final_Answer\Exercise_for_Pool\python
 ```
 
-すでにクローン済みなら、正しい作業ブランチへ移動してから `Exercise_for_Pool/python` に移動してください。**以下のコマンドはすべてこの `python` ディレクトリを作業ディレクトリとします。**
+すでにクローン済みなら `git switch main` と `git pull --ff-only origin main` で `main` を更新し、`Exercise_for_Pool/python` に移動してください。**以下のコマンドはすべてこの `python` ディレクトリを作業ディレクトリとします。**
 
 ### 1-2. Python環境と依存ライブラリ
 
@@ -57,7 +56,7 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m compileall -q shared ex1_web-scraping ex2_docker_and_db inspect_gnavi_links.py verify_csv.py verify_example.py
 ```
 
-2026-11-17の提出者環境ではWindowsとUbuntu/Python 3.8の両方で **80 passed** でした。これは模擬HTML・モック通信を含むテストの結果であり、実サイト50件の取得成功とは別の検証です。
+2026-11-18の提出者環境ではWindowsとUbuntu/Python 3.8の両方で **82 passed** でした。これは模擬HTML・モック通信を含むテストの結果であり、実サイト50件の取得成功とは別の検証です。
 
 ## 3. 課題1-1：Requestsで50件取得
 
@@ -72,7 +71,12 @@ if ($LASTEXITCODE -ne 0) { throw '1-1の取得に失敗しました' }
 
 ## 4. 課題1-2：Seleniumで50件取得
 
-WindowsにGoogle Chromeを導入してください。**ChromeDriverは同梱せずSelenium Managerが自動管理**します（初回はドライバー取得に通信が必要）。元の課題文にはDriver同梱の指定がありますが、以前のドライバーがセキュリティソフトで検出されたため、安全上この方式を採用しています。形式面での扱いは採点者に確認してください。保護機能を無効化しての実行は推奨しません。
+WindowsにGoogle Chromeを導入してください。**公式ChromeDriverは `ex1_web-scraping/chromedriver.exe` に同梱済みで、Selenium Managerは使用しません。** Chromeとドライバーの互換性がある場合、ドライバーの再ダウンロードや `1-2.py` の書き換えは不要です。使用前に次の起動確認を行ってください。バージョン確認・更新方法は [CHROMEDRIVER_SETUP.md](CHROMEDRIVER_SETUP.md) にあります。セキュリティソフトが警告した場合は実行を停止してください。
+
+```powershell
+.\.venv\Scripts\python.exe .\verify_local_driver.py
+if ($LASTEXITCODE -ne 0) { throw 'ChromeDriverの起動確認に失敗しました' }
+```
 
 ```powershell
 .\.venv\Scripts\python.exe .\ex1_web-scraping\1-2.py --authorized --count 50 --max-pages 20 --output .\ex1_web-scraping\1-2_new.csv
@@ -190,7 +194,7 @@ if ($LASTEXITCODE -ne 0) { throw 'LIGNOSAの実サイト検証に失敗しまし
 - `py -3.11` が見つからない：Windows用Python 3.11を導入し、`py -3.11 --version` で確認する
 - `docker compose` が使えない：Docker Desktopが起動中か、Compose v2が利用できるかを確認する
 - `Access denied for user 'root'`：既存MySQLボリュームと`.env`のパスワードが一致するか確認する。**ボリュームを削除しない**
-- Selenium ManagerがChromeDriverを起動できない：Chromeの導入とネットワークを確認する。セキュリティ保護を回避しない
+- 同梱ChromeDriverがChromeを起動できない：`verify_local_driver.py` で起動確認し、ChromeとDriverのビルド系列、SHA-256ファイルを確認する。更新が必要な場合は [CHROMEDRIVER_SETUP.md](CHROMEDRIVER_SETUP.md) を参照し、セキュリティ警告を回避しない
 - DNS・タイムアウト・robots.txtの制限：URLが確認できていれば保持し、判定不能の理由をログに記録する。CAPTCHAやアクセス制限の回避はしない
 - `*.csv`：UTF-8 BOM付きで出力。`*_new.csv` は検証用出力で、Gitの提出用CSVを自動上書きしない
 - `.env`、ローカル検証ログ、診断JSON、認証情報：**GitHubへコミットしない**
@@ -204,5 +208,7 @@ if ($LASTEXITCODE -ne 0) { throw 'LIGNOSAの実サイト検証に失敗しまし
 - [共通HTML抽出規則](shared/gnavi_rules.py)
 - [URL/SSL検証](shared/site_verifier.py)
 - [テスト一覧](tests/)
+- [ChromeDriver同梱・互換性確認](CHROMEDRIVER_SETUP.md)
+- [ドライバー単体の起動確認](verify_local_driver.py)
 
 このREADMEは実行手順と確認済み結果を説明するものです。採点者による最終合格判定を保証するものではありません。
