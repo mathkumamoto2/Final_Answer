@@ -1,0 +1,12 @@
+.env
+.venv*/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.log
+*_new.csv
+*_rechecked.csv
+gnavi_link_evidence.json
+
+# ChromeDriverは同梱せず、Selenium Managerに管理させる。
+chromedriver.exe

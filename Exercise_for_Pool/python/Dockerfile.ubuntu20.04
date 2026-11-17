@@ -1,0 +1,11 @@
+# Target environment required by exercise 2-1.
+FROM ubuntu:20.04
+ENV DEBIAN_FRONTEND=noninteractive PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONUNBUFFERED=1
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      python3 python3-pip python3-venv ca-certificates mysql-client \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /work/python
+COPY requirements-py38.txt /tmp/requirements-py38.txt
+RUN python3 -m pip install --no-cache-dir -r /tmp/requirements-py38.txt
+CMD ["sleep", "infinity"]

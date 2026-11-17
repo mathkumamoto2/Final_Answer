@@ -1,0 +1,37 @@
+services:
+  finalanswer-mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Create .env from .env.example}
+      MYSQL_DATABASE: ex2
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - finalanswer-internal
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  finalanswer-ubuntu:
+    build:
+      context: .
+      dockerfile: Dockerfile.ubuntu20.04
+    volumes:
+      - ./:/work/python
+    working_dir: /work/python
+    depends_on:
+      finalanswer-mysql:
+        condition: service_healthy
+    networks:
+      - finalanswer-internal
+    stdin_open: true
+    tty: true
+
+networks:
+  finalanswer-internal:
+
+volumes:
+  mysql_data:

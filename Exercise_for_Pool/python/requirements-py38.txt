@@ -1,0 +1,10 @@
+# Versions tested for package compatibility with Python 3.8.
+# Python 3.8 is EOL; use only to satisfy the exercise environment requirement.
+requests==2.31.0
+beautifulsoup4==4.12.3
+numpy==1.24.4
+pandas==2.0.3
+selenium==4.26.1
+SQLAlchemy==2.0.36
+PyMySQL==1.1.1
+pytest==8.2.2
