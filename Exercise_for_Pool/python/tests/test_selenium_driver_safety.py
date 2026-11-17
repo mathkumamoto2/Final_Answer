@@ -56,8 +56,16 @@ def _install_fake_selenium(monkeypatch, webdriver_module=None):
     return webdriver_module, service_module
 
 
-def test_create_driver_uses_selenium_manager_not_bundled_driver(monkeypatch, tmp_path):
-    project_dir = Path(scraper.__file__).resolve().parent
+def test_create_driver_uses_bundled_binary_and_sha256(monkeypatch, tmp_path):
+    import hashlib
+    from pathlib import Path
+
+    monkeypatch.setattr(scraper, "__file__", str(tmp_path / "1-2.py"))
+    driver_path = tmp_path / "chromedriver.exe"
+    driver_path.write_bytes(b"synthetic fake driver, never execute")
+    expected_hash = hashlib.sha256(driver_path.read_bytes()).hexdigest()
+    driver_path.with_suffix(".sha256").write_text(expected_hash + "\n", encoding="ascii")
+
     captured = {}
 
     class FakeOptions:
@@ -68,58 +76,58 @@ def test_create_driver_uses_selenium_manager_not_bundled_driver(monkeypatch, tmp
             self.arguments.append(value)
 
     class FakeService:
-        def __init__(self):
-            self.path = None
+        def __init__(self, executable_path=None):
+            self.path = executable_path
             self.process = None
         def stop(self):
             captured["stopped"] = True
 
     class FakeDriver:
-        def __init__(self):
-            self.service = SimpleNamespace(
-                path=str(tmp_path / "selenium-cache" / "chromedriver.exe"),
-                process=None,
-            )
+        def __init__(self, service):
+            self.service = service
             self.command_executor = SimpleNamespace(
                 client_config=SimpleNamespace(timeout=120)
             )
-            self.page_timeout = None
-            self.script_timeout = None
         def set_page_load_timeout(self, value):
             self.page_timeout = value
         def set_script_timeout(self, value):
             self.script_timeout = value
 
-    fake_driver = FakeDriver()
     webdriver_module, service_module = _install_fake_selenium(monkeypatch)
     webdriver_module.ChromeOptions = FakeOptions
     service_module.Service = FakeService
-
-    original_path = str(project_dir) + os.pathsep + str(tmp_path / "other")
-    monkeypatch.setenv("PATH", original_path)
-    monkeypatch.setenv("SE_CHROMEDRIVER", str(project_dir / "chromedriver.exe"))
+    monkeypatch.setenv("SE_CHROMEDRIVER", "C:/unsafe/override.exe")
 
     def fake_chrome(*, service, options):
-        captured["service"] = service
+        captured["override_during_start"] = os.environ.get("SE_CHROMEDRIVER")
         captured["options"] = options
-        captured["path_during_start"] = os.environ.get("PATH", "")
-        captured["driver_override_during_start"] = os.environ.get("SE_CHROMEDRIVER")
-        return fake_driver
+        return FakeDriver(service)
 
     webdriver_module.Chrome = fake_chrome
+    driver = scraper.create_driver()
+    assert Path(driver.service.path) == driver_path
+    assert captured["override_during_start"] is None
+    assert os.environ["SE_CHROMEDRIVER"] == "C:/unsafe/override.exe"
+    assert driver.command_executor.client_config.timeout == scraper.WEBDRIVER_COMMAND_TIMEOUT
+    assert driver.page_timeout == scraper.PAGE_LOAD_TIMEOUT
+    assert driver.script_timeout == scraper.SCRIPT_TIMEOUT
+    assert driver.service.path.endswith("chromedriver.exe")
+    assert any("--user-agent=" in arg for arg in captured["options"].arguments)
 
-    result = scraper.create_driver()
 
-    assert result is fake_driver
-    assert captured["service"].path is None
-    assert captured["driver_override_during_start"] is None
-    assert str(project_dir) not in captured["path_during_start"]
-    assert os.environ["PATH"] == original_path
-    assert "SE_CHROMEDRIVER" not in os.environ
-    assert captured["options"].page_load_strategy == "normal"
-    assert fake_driver.page_timeout == scraper.PAGE_LOAD_TIMEOUT
-    assert fake_driver.script_timeout == scraper.SCRIPT_TIMEOUT
-    assert fake_driver.command_executor.client_config.timeout == scraper.WEBDRIVER_COMMAND_TIMEOUT
+def test_create_driver_rejects_missing_bundled_binary(monkeypatch, tmp_path):
+    monkeypatch.setattr(scraper, "__file__", str(tmp_path / "1-2.py"))
+    with pytest.raises(FileNotFoundError, match="chromedriver.exe"):
+        scraper.create_driver()
+
+
+def test_create_driver_rejects_tampered_binary(monkeypatch, tmp_path):
+    monkeypatch.setattr(scraper, "__file__", str(tmp_path / "1-2.py"))
+    binary = tmp_path / "chromedriver.exe"
+    binary.write_bytes(b"contents changed")
+    binary.with_suffix(".sha256").write_text("0" * 64 + "\n", encoding="ascii")
+    with pytest.raises(RuntimeError, match="SHA-256"):
+        scraper.create_driver()
 
 
 def test_safe_quit_suppresses_remote_quit_failure_and_stops_service():

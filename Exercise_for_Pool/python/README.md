@@ -1,182 +1,208 @@
-# Python課題 1-1 / 1-2 / 2-2 — 修正版
+# Python課題 1-1 / 1-2 / 2-2 — 実行・検証ガイド
 
-## 修正方針
+> **ChromeDriver提出について**：課題1-2は、Google Chrome for Testing の公式配布元から取得した `chromedriver.exe` を `ex1_web-scraping/` に同梱し、`Service(executable_path=...)` で起動する方式です。取得・バージョン照合・SHA-256・提出手順は [CHROMEDRIVER_SETUP.md](CHROMEDRIVER_SETUP.md) を参照してください。古い検出済みの実行ファイルは再利用せず、ウイルス対策ソフトの警告を回避しないでください。
 
-本実装は `ACCEPTANCE_CRITERIA.md` と本間さんからの確認済み回答を基準にしています。
 
-- 「お店のホームページ」を「オフィシャルページ」より優先します。
-- `href="#"` のリンクは、同じリンクに付いた `data-o` / `data-url` / `data-href` / `onclick` の静的なURL表現から解析します。JavaScriptは実行しません。
-- 「お店に直接メールする」に対応する `mailto:` または同じラベル内のメールアドレスだけを採用します。
-- 掲載URLと接続確認結果を分離します。TLSエラー・タイムアウト・HTTPエラー・CAPTCHA・robots.txtの確認不能でも、判明済みの掲載URLは保持します。
-- HTTPSのTLS証明書検証が成功したHTTP 404は `SSL=TRUE` とし、`HTTP_ERROR` を別に記録します。
-- 別ドメインへ転送された場合、店舗名または具体的な住所の一致を確認できなければ転送先を採用しません。
-- Requests / Selenium / URL検証のリクエスト前に3秒待機し、User-Agentとrobots.txtを適用します。アクセス制限やCAPTCHAの回避はしません。
-- 1-1 / 1-2は `shared.gnavi_rules` と `shared.site_verifier` を共有し、2-2は1-1の `collect()` を再利用します。
+このディレクトリは、ぐるなびの店舗情報を取得するPython課題の提出物です。**初めて実行する場合は「1. 準備」から順番に進めてください。** 既存のCSVとDB確認画像を見るだけなら、再スクレイピングは不要です。
 
-## フォルダ構成
+- **1-1**：Requestsで店舗50件を取得し、`ex1_web-scraping/1-1.csv` の9列に保存
+- **1-2**：Seleniumで一覧の次ページボタンをクリックして店舗50件を取得し、`ex1_web-scraping/1-2.csv` に保存
+- **2-1**：Ubuntu 20.04 / Python 3.8 / MySQLの環境構築（採点済み・合格）
+- **2-2**：Ubuntuコンテナで1-1と同じ取得処理を行い、MySQLの `ex2.ex2_2` に50件を登録
 
-```text
-Exercise_for_Pool/python/
-├── shared/
-│   ├── __init__.py
-│   ├── gnavi_rules.py
-│   └── site_verifier.py
-├── ex1_web-scraping/
-│   ├── 1-1.py
-│   ├── 1-2.py
-│   └── explanation.md
-├── ex2_docker_and_db/
-│   ├── 2-2.py
-│   └── explanation.md
-├── tests/
-├── inspect_gnavi_links.py
-├── verify_example.py
-├── verify_csv.py
-├── requirements.txt
-├── requirements-py38.txt
-├── Dockerfile.ubuntu20.04
-├── docker-compose.yml
-├── .env.example
-└── ACCEPTANCE_CRITERIA.md
-```
+[課題1の原文](ex1_web-scraping/explanation.md) / [課題2の原文](ex2_docker_and_db/explanation.md) / [レビューへの対応基準](ACCEPTANCE_CRITERIA.md)
 
-## Windowsでの環境構築
+## 0. 提出物と検証済みの結果
 
-PowerShellでリポジトリ内の `Exercise_for_Pool\python` に移動します。
+| 提出対象 | ファイル・結果 | 2026-11-17の確認 |
+| --- | --- | --- |
+| 1-1（Requests） | [`1-1.py`](ex1_web-scraping/1-1.py)・[`1-1.csv`](ex1_web-scraping/1-1.csv) | 50件 / 指定9列 / URL 49件 |
+| 1-2（Selenium） | [`1-2.py`](ex1_web-scraping/1-2.py)・[`1-2.csv`](ex1_web-scraping/1-2.csv) | 50件 / 指定9列 / URL 49件 |
+| 2-1（Docker環境） | [`ex2-1.png`](ex2_docker_and_db/ex2-1.png) | 採点済み・合格（変更なし） |
+| 2-2（MySQL） | [`2-2.py`](ex2_docker_and_db/2-2.py)・[DB件数](ex2_docker_and_db/ex2-2_count.png)・[列構成](ex2_docker_and_db/ex2-2_columns.png)・[保存内容](ex2_docker_and_db/ex2-2_table.png) | `COUNT(*)=50` / `COUNT(URL)=49` / 9列一致 |
+| 共通処理・テスト | [`shared/`](shared/)・[`tests/`](tests/) | Windows / Ubuntu 3.8でそれぞれ80テスト合格 |
+
+上表は**提出者の実行ログと登録済み成果物で確認した結果**です。再実行の成功や、すべての外部サイトの稼働を保証するものではありません。URL未取得の店舗1件は、取得できた証拠のないURLを推測で補完していません。URLとSSLの判定方法は後述します。
+
+## 1. 準備（Windows / PowerShell）
+
+必要なもの：**Git、Python 3.11、インターネット接続**。課題1-2には **Google Chrome**、課題2-2には **Docker Desktop（Linuxコンテナ）** が必要です。Docker Compose v2の `docker compose` を使用します。
+
+### 1-1. リポジトリを取得
+
+作業したいフォルダでPowerShellを開き、以下を実行します。**修正済みの作業ブランチを指定してクローン**します。
 
 ```powershell
-cd C:\Users\KH\Downloads\Final_Answer\Exercise_for_Pool\python
+git clone --branch fix/python-scraping-review-20261116 --single-branch https://github.com/mathkumamoto2/Final_Answer.git
+Set-Location .\Final_Answer\Exercise_for_Pool\python
+```
+
+すでにクローン済みなら、正しい作業ブランチへ移動してから `Exercise_for_Pool/python` に移動してください。**以下のコマンドはすべてこの `python` ディレクトリを作業ディレクトリとします。**
+
+### 1-2. Python環境と依存ライブラリ
+
+```powershell
 py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Python 3.11以降を推奨します。Python 3.8を使う場合は `requirements-py38.txt` を使用してください。
+以後は仮想環境を有効化する必要はありません。コマンド中の `python.exe` をそのまま使います。Python 3.8の場合は後述のDocker環境と `requirements-py38.txt` を使ってください。
 
-## オフライン回帰テスト・静的検査
+## 2. オフラインテスト（最初に実行）
+
+**外部サイトやDBへ接続せず**、抽出・URL/SSL判定・例外処理の回帰テストを実行します。
 
 ```powershell
-python -m pytest -q tests
-python -m compileall -q shared ex1_web-scraping ex2_docker_and_db inspect_gnavi_links.py verify_csv.py verify_example.py
+.\.venv\Scripts\python.exe -m pytest -q tests
+.\.venv\Scripts\python.exe -m compileall -q shared ex1_web-scraping ex2_docker_and_db inspect_gnavi_links.py verify_csv.py verify_example.py
 ```
 
-テストは通信をモックして実行するため、外部サイトへアクセスしません。
+2026-11-17の提出者環境ではWindowsとUbuntu/Python 3.8の両方で **80 passed** でした。これは模擬HTML・モック通信を含むテストの結果であり、実サイト50件の取得成功とは別の検証です。
 
-## LIGNOSA CAFEの静的HTML確認
+## 3. 課題1-1：Requestsで50件取得
 
-本間さんから示された例です。サイトの利用条件を確認し、アクセスが許可されている場合のみ実行してください。
+サイトの利用条件を確認し、アクセスが許可されている場合のみ実行してください。
 
 ```powershell
-python .\inspect_gnavi_links.py --url https://r.gnavi.co.jp/n814504/ --output gnavi_link_evidence.json
+.\.venv\Scripts\python.exe .\ex1_web-scraping\1-1.py --authorized --count 50 --output .\ex1_web-scraping\1-1_new.csv
+if ($LASTEXITCODE -ne 0) { throw '1-1の取得に失敗しました' }
 ```
 
-HTML上の `data-o` に `{"a":"lignosa.com\\/","b":"http"}` がある場合、静的解析で `http://lignosa.com/` を復元します。URLはHTMLの証拠から抽出し、スクレイピングコードには店舗固有URLをハードコードしません。
+出力先：`ex1_web-scraping/1-1_new.csv`。提出済みの `1-1.csv` は上書きしません。3秒以上の待機、robots.txt確認、タイムアウトのため実行には時間がかかります。取得条件を満たさない場合、50件に満たないCSVは生成しません。
 
-正例・負例を含む実サイト受け入れ確認は、許可・利用条件を確認した場合のみ実行します。
+## 4. 課題1-2：Seleniumで50件取得
+
+WindowsにGoogle Chromeを導入してください。**ChromeDriverは同梱せずSelenium Managerが自動管理**します（初回はドライバー取得に通信が必要）。元の課題文にはDriver同梱の指定がありますが、以前のドライバーがセキュリティソフトで検出されたため、安全上この方式を採用しています。形式面での扱いは採点者に確認してください。保護機能を無効化しての実行は推奨しません。
 
 ```powershell
-python .\verify_example.py --authorized
+.\.venv\Scripts\python.exe .\ex1_web-scraping\1-2.py --authorized --count 50 --max-pages 20 --output .\ex1_web-scraping\1-2_new.csv
+if ($LASTEXITCODE -ne 0) { throw '1-2の取得に失敗しました' }
 ```
 
-CAPTCHA、robots.txtによる禁止、接続制限が発生した場合は回避せず停止してください。
+出力先：`ex1_web-scraping/1-2_new.csv`。Seleniumで実際に一覧の「次へ」ボタンをクリックしてページを進めます。こちらも提出済みCSVは上書きしません。
 
-## 課題1-1（Requests）
+### 4-1. CSVの検証（1-1・1-2が両方成功した場合）
 
 ```powershell
-cd .\ex1_web-scraping
-python .\1-1.py --authorized --count 50 --output .\1-1_new.csv 2>&1 | Tee-Object -FilePath .\scrape-1-1.log
+.\.venv\Scripts\python.exe .\verify_csv.py .\ex1_web-scraping\1-1_new.csv .\ex1_web-scraping\1-2_new.csv
+if ($LASTEXITCODE -ne 0) { throw 'CSV検証に失敗しました' }
 ```
 
-## 課題1-2（Selenium）
+50件・指定9列・重複・住所分割・URLとSSLの整合性を検証します。提出済みCSVを検証する場合は、末尾の2ファイル名をそれぞれ `1-1.csv` と `1-2.csv` に置き換えてください。
 
-Selenium ManagerにChromeDriverのバージョン解決・取得・キャッシュを任せます。以前の提出物で `chromedriver.exe` がGit管理されている場合は、作業ブランチで `git rm --cached -- Exercise_for_Pool/python/ex1_web-scraping/chromedriver.exe` を実行して追跡対象から外し、ローカルに残っている検出済みファイルも実行・復元せず削除してください。 `.gitignore` でも `chromedriver.exe` を除外しています。プロジェクトに `chromedriver.exe` は同梱せず、手動の `--driver` 指定も受け付けません。初回起動時はChromeのバージョン確認と公式配布元からのドライバー取得のため、インターネット接続が必要です。Norton等が新しく取得したドライバーをブロックした場合、保護を無効化したり除外登録したりせず、そこで停止してください。
+## 5. 課題2-2：Docker（Ubuntu 20.04 / Python 3.8）とMySQL
+
+**ここからも作業ディレクトリは `Exercise_for_Pool/python` のままです。** Docker Desktopを起動してください。新規構築の場合と既存環境の場合では、`.env` の扱いが異なります。
+
+### 5-1. 初めてDocker環境を作る場合のみ：DBパスワードを設定
+
+以下は`.env`がまだ存在しない場合に、暗号学的乱数からパスワードを生成します。**既存の `.env` やMySQLの永続データは上書きしません。**
 
 ```powershell
-python .\1-2.py --authorized --count 50 --max-pages 20 --output .\1-2_new.csv 2>&1 | Tee-Object -FilePath .\scrape-1-2.log
+if (-not (Test-Path .\.env)) {
+    $bytes = New-Object 'System.Byte[]' 32
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    $dbPassword = [System.BitConverter]::ToString($bytes).Replace('-', '')
+    Set-Content -LiteralPath .\.env -Value "MYSQL_ROOT_PASSWORD=$dbPassword" -Encoding ASCII
+    Remove-Variable dbPassword, bytes
+    Write-Host 'MySQLパスワードを .env に生成しました（Gitへ追加しないこと）。'
+} else {
+    Write-Host '.env は既に存在するため変更しません。'
+}
 ```
 
-`1-2.py` はページロード45秒、WebDriverローカル通信60秒に制限します。ページロードタイムアウトは再試行せず記録し、ChromeDriverプロセスとの通信断は処理を中止します。終了時に `driver.quit()` が失敗しても、二次例外で元のエラーを隠さないように後始末します。
+`.env` は `.gitignore` によりGit管理対象外です。**初期化済みのMySQLボリュームでは、`.env` を変更しても既存のDBパスワードは変わりません。** 接続に失敗したら既存の資格情報を確認し、`docker compose down -v` でデータを消さないでください。
 
-CSVの件数・列・重複・住所・URL/SSL整合性を確認します。
-
-```powershell
-cd ..
-python .\verify_csv.py .\ex1_web-scraping\1-1_new.csv .\ex1_web-scraping\1-2_new.csv
-```
-
-確認前に既存の `1-1.csv` / `1-2.csv` を上書きしないでください。
-
-## 課題2-2（Docker / MySQL）
-
-### 既存の課題用コンテナを使う場合
-
-リポジトリ直下で、修正版をUbuntuコンテナへコピーしてテストします。
+### 5-2. 起動・Python 3.8テスト
 
 ```powershell
-docker cp ".\Exercise_for_Pool\python\." finalanswer-ubuntu:/work/python
-docker exec -it finalanswer-ubuntu bash -lc "cd /work/python && python3 -m pip install -r requirements-py38.txt && python3 -m pytest -q tests"
-```
-
-MySQLコンテナ `finalanswer-mysql` と同じDockerネットワークに接続されていることを確認してから実行します。
-
-```powershell
-docker exec -it -w /work/python/ex2_docker_and_db finalanswer-ubuntu python3 2-2.py --authorized
-```
-
-MySQLパスワードは対話入力です。ソースコード・コマンド履歴・GitHubへ保存しないでください。
-
-### 同梱Composeで新規構築する場合
-
-`.env.example` を `.env` にコピーし、強固なMySQLパスワードに変更してから実行します。
-
-```powershell
-Copy-Item .\.env.example .\.env
-# .env の MYSQL_ROOT_PASSWORD を変更
-
 docker compose up -d --build
+if ($LASTEXITCODE -ne 0) { throw 'Docker起動に失敗しました' }
+
 docker compose exec finalanswer-ubuntu python3 --version
 docker compose exec finalanswer-ubuntu python3 -m pytest -q tests
-docker compose exec finalanswer-ubuntu python3 ex2_docker_and_db/2-2.py --authorized
+if ($LASTEXITCODE -ne 0) { throw 'Docker上のテストに失敗しました' }
 ```
 
-既存ボリュームを消す `docker compose down -v` は実行しないでください。
+同梱の `Dockerfile.ubuntu20.04` と `docker-compose.yml` が、Ubuntu/Python用コンテナおよびMySQL 8.0用コンテナを構成します。Python 3.8用の依存パッケージは `requirements-py38.txt` から導入されます。
 
-### MySQLの確認
+### 5-3. 実サイトから再取得し、DBへ50件保存
+
+**注意：このコマンドは既存の `ex2.ex2_2` の登録データ50件を置き換えます。** 証拠画像だけ確認したい場合は実行不要です。サイトの利用条件を確認した場合のみ実行してください。
 
 ```powershell
-docker exec -it finalanswer-mysql mysql -u root -p ex2
+docker compose exec finalanswer-ubuntu python3 ex2_docker_and_db/2-2.py --authorized --mysql-user root
+if ($LASTEXITCODE -ne 0) { throw '2-2のDB登録に失敗しました' }
 ```
 
+最後に表示される `MySQLパスワード:` には、初回生成した `.env` の `MYSQL_ROOT_PASSWORD` を入力します。**入力文字は表示されません。** パスワードをコマンドの引数やGitHubに記載しないでください。
+
+### 5-4. MySQLの保存内容を確認（データは変更されません）
+
+```powershell
+docker compose exec finalanswer-mysql mysql -uroot -p -D ex2 --default-character-set=utf8mb4 --table
+```
+
+パスワードを入力し、`mysql>` プロンプトで以下を**1つずつ**実行します。
+
 ```sql
-SELECT COUNT(*) AS total_rows,
-       COUNT(URL) AS non_null_urls,
+SELECT COUNT(*) AS total_rows, COUNT(URL) AS url_count,
        COUNT(NULLIF(URL, '')) AS non_empty_urls
 FROM ex2_2;
+
 SHOW COLUMNS FROM ex2_2;
+
 SELECT * FROM ex2_2 LIMIT 5;
 ```
 
-`COUNT(*)` は全行数、`COUNT(URL)` はURLがNULLではない行数です。50行のうちURLが1件空欄なら、`COUNT(*)=50`、`COUNT(URL)=49` となり得ます。
+`COUNT(*)` は**全行数**、`COUNT(URL)` は**NULLでないURLの件数**です。2026-11-17の結果は `50 / 49 / 49` でした。終了は `exit;`。提出済み画像は[件数](ex2_docker_and_db/ex2-2_count.png)、[9列](ex2_docker_and_db/ex2-2_columns.png)、[実データ](ex2_docker_and_db/ex2-2_table.png)です。
 
-2-2はテーブルの列構成を確認し、9列すべてを照合します。既存テーブルのデータを置き換える処理はトランザクション内で行い、失敗時はロールバックします。
+## 6. 本間さんの指摘3点に対する実装・確認方法
 
-## 検証上の制限
+| 指摘 | 実装 | 検証 |
+| --- | --- | --- |
+| `href="#"` の店舗HP取得漏れ | `shared/gnavi_rules.py` の `data-o` 等の静的解析。「お店のホームページ」を優先 | `tests/test_gnavi_rules.py`、下記LIGNOSA実サイト検証 |
+| メールの誤取得 | 「お店に直接メールする」に対応するリンクのみ取得。無関係な `mailto:` やJSON-LDメールを代用しない | 正例・負例テスト、LIGNOSAのメール取得 |
+| URL接続失敗・SSL判定 | `shared/site_verifier.py` で掲載URLと通信結果を分離し、TLS・HTTP・CAPTCHA・中継を分類 | `tests/test_site_verifier.py`、`tests/test_submission_guardrails.py` |
 
-この修正版のオフラインテスト・構文検査はローカルのPython実行環境で実施しています。実際のWindows Chrome/Selenium、Ubuntu 20.04/Python 3.8コンテナ、MySQLコンテナ、外部サイトへの再アクセスは別途ユーザー環境で確認が必要です。テスト合格を実サイト取得やDocker/MySQLの実行済みという意味にはしません。
+LIGNOSA CAFE（レビュー指定の例）に対する**実サイトのHTMLからの抽出確認**は、2026-11-17に次の結果で成功しました。
 
+```text
+お店のホームページ -> http://lignosa.com/ (source=data-o)
+オフィシャルページ -> https://n814504.gorp.jp/
+Chosen published URL: http://lignosa.com/
+Shop email: info@lignosa.com
+[PASS] Live LIGNOSA example verified.
+```
 
-## 2026-11-17 ラベル検出・診断修正
+再検証する場合は、利用条件・許可を確認後に次を実行します。これは **LIGNOSAページに載ったURLとメールの抽出テスト**であり、`http://lignosa.com/` のサーバー接続成功を証明するテストではありません。
 
-「公式サイト 最新情報やブログなど多数掲載」のようなリンク表記を、
-「オフィシャルページ」と同じ優先度の公式候補として認識します。
-「お店のホームページ」が存在する場合の優先順位は変更しません。
+```powershell
+.\.venv\Scripts\python.exe .\verify_example.py --authorized
+if ($LASTEXITCODE -ne 0) { throw 'LIGNOSAの実サイト検証に失敗しました' }
+```
 
-`inspect_gnavi_links.py` は LIGNOSA 専用の検索語を標準では使いません。
-任意の検索語を使う場合は `--needle uokura-kumamoto.com` のように指定します。
-抽出結果の `resolved_site_links` は静的HTML解析の結果です。
-特定店舗の現在のHTMLに掲載されていることを保証するものではありません。
+`SSL=TRUE` は検証済みのHTTPS接続を意味し、TLSエラーや確認不能の場合は `FALSE` として理由をログへ残します。**HTTPの404/403やCAPTCHAはTLS証明書の失敗とは別**です。掲載URLを確認できても接続できない場合は、推測で別のURLを補完しません。
 
-この配布物のインストーラは `.env`、CSV、既存DBを変更しません。
-リポジトリの対象コードは上書き前にバックアップを作成します。
-ZIP付属のテストは外部サイトを呼ばず、実サイトの再取得には利用条件の確認が必要です。
+## 7. トラブルシューティングと注意事項
+
+- `py -3.11` が見つからない：Windows用Python 3.11を導入し、`py -3.11 --version` で確認する
+- `docker compose` が使えない：Docker Desktopが起動中か、Compose v2が利用できるかを確認する
+- `Access denied for user 'root'`：既存MySQLボリュームと`.env`のパスワードが一致するか確認する。**ボリュームを削除しない**
+- Selenium ManagerがChromeDriverを起動できない：Chromeの導入とネットワークを確認する。セキュリティ保護を回避しない
+- DNS・タイムアウト・robots.txtの制限：URLが確認できていれば保持し、判定不能の理由をログに記録する。CAPTCHAやアクセス制限の回避はしない
+- `*.csv`：UTF-8 BOM付きで出力。`*_new.csv` は検証用出力で、Gitの提出用CSVを自動上書きしない
+- `.env`、ローカル検証ログ、診断JSON、認証情報：**GitHubへコミットしない**
+
+## 8. 関連ファイル
+
+- [提出受け入れ基準](ACCEPTANCE_CRITERIA.md)
+- [HTMLのリンク解析ツール](inspect_gnavi_links.py)
+- [LIGNOSA実サイト検証](verify_example.py)
+- [CSVバリデーター](verify_csv.py)
+- [共通HTML抽出規則](shared/gnavi_rules.py)
+- [URL/SSL検証](shared/site_verifier.py)
+- [テスト一覧](tests/)
+
+このREADMEは実行手順と確認済み結果を説明するものです。採点者による最終合格判定を保証するものではありません。

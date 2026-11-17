@@ -11,9 +11,6 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 
-# Selenium Managerの匿名統計送信を無効化（収集処理には無関係）。
-os.environ.setdefault("SE_AVOID_STATS", "true")
-
 import pandas as pd
 from bs4 import BeautifulSoup
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -295,7 +292,31 @@ def click_next(driver: webdriver.Chrome, current_page: int, verifier: URLVerifie
 
 
 def create_driver() -> webdriver.Chrome:
-    """同梱chromedriver.exeを使わず、Selenium Managerにドライバー管理を任せる。"""
+    """Start Chrome using the explicitly bundled, SHA-256-pinned driver.
+
+    Never let Selenium Manager silently obtain or select a different binary.
+    The binary and its sha256 sidecar are retrieved from Chrome for Testing
+    using DOWNLOAD_CHROMEDRIVER.ps1 and committed together with this source.
+    """
+    import hashlib
+    driver_path = Path(__file__).resolve().with_name("chromedriver.exe")
+    digest_path = driver_path.with_suffix(".sha256")
+    if not driver_path.is_file():
+        raise FileNotFoundError(
+            "同梱chromedriver.exeがありません。DOWNLOAD_CHROMEDRIVER.ps1を実行してください: {}".format(driver_path)
+        )
+    if not digest_path.is_file():
+        raise RuntimeError("ChromeDriverの検証ハッシュがありません: {}".format(digest_path))
+    expected = digest_path.read_text(encoding="ascii").strip().split()[0].lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise RuntimeError("ChromeDriverのSHA-256ファイルが不正です")
+    digest = hashlib.sha256()
+    with driver_path.open("rb") as binary:
+        for chunk in iter(lambda: binary.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if digest.hexdigest() != expected:
+        raise RuntimeError("ChromeDriverのSHA-256が一致しません。実行を中止します")
+
     from selenium import webdriver
     from selenium.webdriver.chrome.service import Service
 
@@ -303,51 +324,32 @@ def create_driver() -> webdriver.Chrome:
     options.add_argument("--user-agent={}".format(USER_AGENT))
     options.page_load_strategy = "normal"
 
-    # 環境変数で危険な/古い手動ドライバーが指定されるのを防ぐ。
-    os.environ.pop("SE_CHROMEDRIVER", None)
-
-    # プロジェクト内のchromedriver.exeをPATH経由で拾わないよう、
-    # このPythonプロセスの起動時だけプロジェクトディレクトリをPATHから除く。
-    original_path = os.environ.get("PATH", "")
-    project_dir = os.path.normcase(os.path.realpath(str(Path(__file__).resolve().parent)))
-    filtered_entries = []
-    for entry in original_path.split(os.pathsep):
-        candidate = entry.strip().strip('"')
-        if not candidate:
-            continue
-        normalized = os.path.normcase(os.path.realpath(os.path.expandvars(candidate)))
-        if normalized != project_dir:
-            filtered_entries.append(entry)
-    os.environ["PATH"] = os.pathsep.join(filtered_entries)
-
-    service = Service()  # executable_pathは指定せずSelenium Managerを使用する。
+    # Selenium Service may prioritize SE_CHROMEDRIVER over executable_path.
+    # Temporarily remove the override, and restore the caller's environment.
+    external_override = os.environ.pop("SE_CHROMEDRIVER", None)
+    service = None
     try:
+        service = Service(executable_path=str(driver_path))
+        actual = os.path.normcase(os.path.realpath(str(service.path)))
+        expected_path = os.path.normcase(os.path.realpath(str(driver_path)))
+        if actual != expected_path:
+            raise RuntimeError("指定外のChromeDriverが選択されました: {}".format(service.path))
         driver = webdriver.Chrome(service=service, options=options)
     except Exception as exc:
         try:
-            service.stop()
+            if service is not None:
+                service.stop()
         except Exception:
             pass
         raise RuntimeError(
-            "Selenium ManagerでChromeDriverを起動できませんでした。"
-            "Nortonが新しいドライバーを検出した場合は復元/除外せず停止してください。"
+            "同梱ChromeDriverの起動に失敗しました。ChromeとDriverのバージョン、"
+            "セキュリティソフトの警告を確認し、警告時は停止してください"
         ) from exc
     finally:
-        os.environ["PATH"] = original_path
-
-    # 同梱の検出対象ファイルが選択されていたら、ページへアクセスする前に停止する。
-    bundled_driver = os.path.normcase(
-        os.path.realpath(str(Path(__file__).with_name("chromedriver.exe")))
-    )
-    actual_driver = os.path.normcase(os.path.realpath(str(driver.service.path)))
-    if actual_driver == bundled_driver:
-        safe_quit(driver)
-        raise RuntimeError(
-            "検出対象の同梱chromedriver.exeが選択されました。実行を中止します。"
-        )
+        if external_override is not None:
+            os.environ["SE_CHROMEDRIVER"] = external_override
 
     try:
-        # Selenium 4.26+ のClientConfigでローカルWebDriver通信の待ち時間を制限。
         config = getattr(driver.command_executor, "client_config", None)
         if config is not None and hasattr(config, "timeout"):
             config.timeout = WEBDRIVER_COMMAND_TIMEOUT
@@ -357,7 +359,8 @@ def create_driver() -> webdriver.Chrome:
         safe_quit(driver)
         raise
 
-    print("[INFO] Selenium Managerが選択したChromeDriver:", driver.service.path)
+    print("[INFO] 同梱ChromeDriver:", str(driver_path))
+    print("[INFO] SHA-256:", expected)
     return driver
 
 

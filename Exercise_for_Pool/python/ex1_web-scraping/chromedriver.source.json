@@ -1,0 +1,8 @@
+﻿{
+    "installed_chrome_version":  "157.0.8103.51",
+    "chromedriver_version":  "157.0.8103.78",
+    "platform":  "win64",
+    "source":  "https://storage.googleapis.com/chrome-for-testing-public/157.0.8103.78/win64/chromedriver-win64.zip",
+    "chrome_for_testing_catalog":  "https://googlechromelabs.github.io/chrome-for-testing/latest-patch-versions-per-build-with-downloads.json",
+    "sha256":  "e32106adb49b38ed290b89a9e5b039f48a1fb652c0bd94dd880b8d896ee0c966"
+}
