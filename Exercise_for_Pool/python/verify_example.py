@@ -17,6 +17,14 @@ EXPECTED_PUBLISHED = "http://lignosa.com/"
 EXPECTED_EMAIL = "info@lignosa.com"
 
 
+def format_label_evidence(rows):
+    """Format actual inspect_labels() records using their public keys."""
+    return [
+        "  {} -> {} source={}".format(row["label"], row["url"], row["source"])
+        for row in rows
+    ]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--authorized", action="store_true")
@@ -33,8 +41,8 @@ def main():
         chosen = select_priority(extract_site_candidates(markup, SOURCE_URL))
         email = extract_direct_email(markup)
         print("Label evidence:")
-        for row in inspect_labels(markup, SOURCE_URL):
-            print("  ", row["label"], "->", row["resolved_url"], "source=", row["evidence"])
+        for line in format_label_evidence(inspect_labels(markup, SOURCE_URL)):
+            print(line)
         print("Chosen published URL:", chosen.url if chosen else None)
         print("Shop email:", email)
         assert chosen is not None, "Missing site link"

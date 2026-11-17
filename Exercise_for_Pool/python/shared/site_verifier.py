@@ -335,6 +335,16 @@ class URLVerifier:
         if not self.is_public_url(original):
             return VerificationResult(original, "FALSE", "INVALID_URL", "Published URL is not a safe public HTTP(S) URL")
 
+        # A Gurunavi URL is an intermediary, not the shop's own published URL.
+        # Reject it BEFORE any network request; never persist it into CSV/MySQL.
+        original_host = (urlsplit(original).hostname or "").lower().rstrip(".")
+        if self._is_gnavi_host(original_host):
+            return VerificationResult(
+                "", "", "INTERMEDIARY",
+                "Gurunavi intermediary URL is not a published external shop website",
+                final_url=original,
+            )
+
         original_tls_verified = False
         current = original
 
